@@ -1,51 +1,50 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
-const { exec } = require("child_process");
-const path = require("path");
 const ytdl = require("@distube/ytdl-core");
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
+
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 const app = express();
 app.use(cors());
 
+// ✅ Home route
 app.get("/", (req, res) => {
     res.send("Server is running 🚀");
 });
 
 
-// 🎧 DOWNLOAD ROUTE
-app.get("/download", (req, res) => {
+// 🎧 DOWNLOAD ROUTE (UPDATED - NO yt-dlp)
+app.get("/download", async (req, res) => {
     const url = req.query.url;
 
     if (!url) {
         return res.status(400).send("URL is required");
     }
 
-    const fileName = "audio.mp3";
-    const filePath = path.join(__dirname, fileName);
+    try {
+        res.header("Content-Disposition", "attachment; filename=audio.mp3");
 
-    const command = `yt-dlp -x --audio-format mp3 -o "${filePath}" "${url}"`;
+        const stream = ytdl(url, { quality: "highestaudio" });
 
-    exec(command, (error, stdout, stderr) => {
-        if (error) {
-            console.error("Error:", error);
-            return res.status(500).send("Download failed");
-        }
+        ffmpeg(stream)
+            .audioBitrate(128)
+            .format("mp3")
+            .on("error", (err) => {
+                console.error("FFmpeg error:", err);
+                res.status(500).send("Conversion failed");
+            })
+            .pipe(res, { end: true });
 
-        res.download(filePath, "audio.mp3", (err) => {
-            if (err) {
-                console.error("Download error:", err);
-            }
-
-            fs.unlink(filePath, (err) => {
-                if (err) console.error("Delete error:", err);
-            });
-        });
-    });
+    } catch (error) {
+        console.error("Download error:", error);
+        res.status(500).send("Download failed");
+    }
 });
 
 
-// 🎬 VIDEO INFO ROUTE (Preview)
+// 🎬 VIDEO INFO ROUTE (PREVIEW)
 app.get("/info", async (req, res) => {
     const url = req.query.url;
 
